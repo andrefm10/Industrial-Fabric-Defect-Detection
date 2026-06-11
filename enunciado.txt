@@ -1,0 +1,42 @@
+Desenvolver um algoritmo capaz de processar imagens de tecidos em movimento (17m/min), mitigando borrões e identificando anomalias (dobras, sujeira, gramatura) em tempo real.
+Utilizar  metodologias  clássicas  e  de  aprendizado de máquina  para validar o conceito.
+Usar métricas da indústria para validar o desenvolvimento e produzir dados para um paradigma diferente de visão computacional na indústria.
+Definir parametros basicos para obter o resultado esperado.
+
+
+Primeira fase: 
+O objetivo aqui é "limpar" a imagem para que o algoritmo de análise não seja enganado pelo borrão.
+Técnicas de Modelo Clássico (Processamento Digital de Imagens - PDI)
+Wiener Deconvolution (Desconvolução de Wiener):Técnica matemática para reverter o efeito de borrão de movimento (motion blur) baseado na direção e velocidade estimada da esteira.
+Image Sllicing & Reconstruction: Capturar faixas muito finas e remontar a imagem. 
+Frequency Domain Filtering (FFT): Usar a Transformada de Fourier para identificar o ruído causado pelo movimento e removê-lo no domínio da frequência.
+
+
+Técnicas de Machine Learning (Deep Learning)
+Multi-frame image restoration: Utiliza múltiplas partes de filmagens  como treinamento local para  filtrar o deslocamento direcionado  das  imagens centrais  tendo uma melhora  da imagem para  posterior  análise.
+EDVR (enhanced deformable video restoration: Combina redes convolucionais com mecanismos de fusão  temporal para restaurar  quadros a partir de  sequências degradadas.
+BasicVsr ++: Recursos de vídeo são propagados nas duas direções ao longo da sequência. Combina fluxo óptico com convoluções deformáveis para alinhar quadros.
+
+
+Segunda fase: 
+Com a imagem melhorada, o sistema define o que é o "Tecido Padrão" e o que é "Erro".
+Técnicas de Modelo Clássico (PDI)
+Filtro de Gabor: A intenção e encontrar a orientação dos fios. Se a trama mudar (desalinhamento), o filtro teoricamente possibilita essa sensibilidade.
+Equalização por histograma e limiar (Otsu): Técnicas para saturar as cores e separar o tecido para análise.
+Detectar bordas por alto contraste: Dependendo da coloração do tecido é possível utilizar um sensor para mudar o algoritmo otimizando recursos do microprocessador.
+
+
+Técnicas de Machine Learning (Deep Learning)
+Auto encoders (detecção de anomalias): Treinar a rede apenas o que é um tecido “normal”. Quando algo diferente aparece o erro é encontrado.
+Rede neural convolucional (CNN): Classifica o tipo de erro para discriminação.
+Segmentação semântica(U-Net): Desenha um “mapa”  sobre o tecido, pintado de vermelho exatamente onde está  a mancha ou falha de gramatura.
+
+Terceira fase: 
+Avaliação de viabilidade (Benchmark).
+A métrica de sucesso não será apenas a precisão, mas o tempo.
+Tempo de pré- processamento: Quanto tempo o processamento leva para limpar os ruídos indesejados .
+Tempo de inferência: Quanto tempo para detectar o erro.
+Taxa de quadros (FPS): Conseguimos processar mais de 10 fotos por segundo? Se si, atendemos os 17m/min.
+Dimensionar recursos do hardware utilizando AADL (linguagem de análise arquitetura e design).
+
+

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Textile Inspection — Benchmark Report</title>
+<style>
+body { font-family: 'Segoe UI', Tahoma, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }
+h2 { color: #34495e; }
+.chart { background: white; padding: 15px; margin: 15px 0; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+.chart img { max-width: 100%; border-radius: 4px; }
+.chart p { color: #7f8c8d; font-style: italic; }
+.meta { color: #95a5a6; font-size: 0.9em; }
+pre { background: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 8px; overflow-x: auto; }
+</style>
+</head>
+<body>
+<h1>Textile Inspection — Benchmark Report</h1>
+<p class="meta">Generated: 2026-05-19 22:02:09</p>
+<div class="chart"><img src="timing_chart.png" alt="timing_chart"><p>Timing Chart</p></div>
+<div class="chart"><img src="detection_results.png" alt="detection_results"><p>Detection Results</p></div>
+<div class="chart"><img src="feasibility.png" alt="feasibility"><p>Feasibility</p></div>
+
+<h2>Raw Data</h2><pre>{
+  "restoration_best": "clahe",
+  "defects_found": 0,
+  "feasibility": {
+    "measured_fps": 0.5363394346253385,
+    "target_fps": 10.0,
+    "meets_requirement": false,
+    "max_conveyor_speed_m_min": 0.9117770388630754,
+    "headroom_pct": -94.63660565374661
+  },
+  "histogram": {
+    "mean": 118.96380497685185,
+    "std": 103.64736018189237,
+    "median": 102.0,
+    "skewness": 0.05026299507482796,
+    "is_dark": "False",
+    "is_bright": "False",
+    "is_low_contrast": "False"
+  }
+}</pre>
+</body>
+</html>
