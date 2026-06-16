@@ -10,8 +10,9 @@ DEFECTS_DIR = RESULTS_DIR / "defeitos"
 BENCHMARKS_DIR = RESULTS_DIR / "benchmarks"
 DATASET_DIR = BASE_DIR / "aitex-fabric-image-database"
 VIDEOS_DIR = BASE_DIR / "videos"
+MODELS_DIR = RESULTS_DIR / "models"
 
-for d in [FRAMES_DIR, RESTORED_DIR, DEFECTS_DIR, BENCHMARKS_DIR]:
+for d in [FRAMES_DIR, RESTORED_DIR, DEFECTS_DIR, BENCHMARKS_DIR, MODELS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 
@@ -74,6 +75,19 @@ class DetectionConfig:
 
 
 @dataclass
+class DeepLearningConfig:
+    """Parâmetros para treino dos modelos DL (U-Net, CNN)."""
+    unet_epochs: int = 20
+    unet_lr: float = 1e-3
+    unet_batch_size: int = 16
+    unet_patch_size: int = 128
+    unet_val_split: float = 0.2
+    unet_patience: int = 7
+    unet_threshold: float = 0.5
+    max_normal_images: int = 10
+
+
+@dataclass
 class BenchmarkConfig:
     warmup_iterations: int = 3
     measure_iterations: int = 10
@@ -85,4 +99,5 @@ class AppConfig:
     conveyor: ConveyorConfig = field(default_factory=ConveyorConfig)
     restoration: RestorationConfig = field(default_factory=RestorationConfig)
     detection: DetectionConfig = field(default_factory=DetectionConfig)
+    deep_learning: DeepLearningConfig = field(default_factory=DeepLearningConfig)
     benchmark: BenchmarkConfig = field(default_factory=BenchmarkConfig)
