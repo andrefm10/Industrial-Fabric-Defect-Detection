@@ -57,6 +57,47 @@ if TORCH_AVAILABLE:
         def forward(self, x):
             return self.conv(x)
 
+    class AttentionGate(nn.Module):
+        """
+        Attention Gate para skip connections da U-Net.
+
+        Filtra features irrelevantes do encoder antes da concatenação
+        com o decoder. O gating signal (g) do decoder indica "o que procurar",
+        e o coeficiente de atenção (α) destaca regiões relevantes no skip.
+
+        g (decoder) → W_g → ─┐
+                              ├→ ReLU → ψ → Sigmoid → α
+        x (encoder) → W_x → ─┘
+
+        Saída = x * α  (features filtradas por atenção)
+        """
+        def __init__(self, F_g: int, F_l: int, F_int: int):
+            super().__init__()
+            self.W_g = nn.Sequential(
+                nn.Conv2d(F_g, F_int, kernel_size=1, bias=False),
+                nn.BatchNorm2d(F_int)
+            )
+            self.W_x = nn.Sequential(
+                nn.Conv2d(F_l, F_int, kernel_size=1, bias=False),
+                nn.BatchNorm2d(F_int)
+            )
+            self.psi = nn.Sequential(
+                nn.Conv2d(F_int, 1, kernel_size=1, bias=False),
+                nn.BatchNorm2d(1),
+                nn.Sigmoid()
+            )
+            self.relu = nn.ReLU(inplace=True)
+
+        def forward(self, g, x):
+            g1 = self.W_g(g)
+            x1 = self.W_x(x)
+            if g1.shape[2:] != x1.shape[2:]:
+                g1 = F.interpolate(g1, size=x1.shape[2:],
+                                   mode="bilinear", align_corners=True)
+            psi = self.relu(g1 + x1)
+            psi = self.psi(psi)
+            return x * psi
+
     class UNet(nn.Module):
         """
         U-Net para segmentação binária de defeitos.
@@ -73,10 +114,14 @@ if TORCH_AVAILABLE:
           - Features espaciais (do encoder): "ONDE está"
         """
         def __init__(self, in_channels: int = 1, out_channels: int = 1,
-                     features: Optional[List[int]] = None):
+                     features: Optional[List[int]] = None,
+                     use_attention: bool = False):
             super().__init__()
             if features is None:
                 features = [32, 64, 128, 256]
+
+            self.use_attention = use_attention
+            self.out_channels = out_channels
 
             # Encoder: cada bloco extrai features e reduz resolução
             self.encoder_blocks = nn.ModuleList()
@@ -92,15 +137,20 @@ if TORCH_AVAILABLE:
             # Decoder: reconstrói a resolução original
             self.upconvs = nn.ModuleList()
             self.decoder_blocks = nn.ModuleList()
+            if use_attention:
+                self.attention_gates = nn.ModuleList()
+
             for f in reversed(features):
-                # ConvTranspose2d: "desfaz" o MaxPool — dobra resolução
                 self.upconvs.append(
                     nn.ConvTranspose2d(f * 2, f, kernel_size=2, stride=2)
                 )
-                # f*2 no input porque concatenamos com skip connection
                 self.decoder_blocks.append(ConvBlock(f * 2, f))
+                if use_attention:
+                    self.attention_gates.append(
+                        AttentionGate(F_g=f, F_l=f, F_int=max(1, f // 2))
+                    )
 
-            # Convolução final 1×1: reduz de 32 canais para 1
+            # Convolução final 1×1
             self.final_conv = nn.Conv2d(features[0], out_channels, kernel_size=1)
 
         def forward(self, x):
@@ -108,29 +158,34 @@ if TORCH_AVAILABLE:
             skip_features = []
             for encoder in self.encoder_blocks:
                 x = encoder(x)
-                skip_features.append(x)   # Guarda para skip connection
-                x = self.pool(x)          # Reduz resolução 2×
+                skip_features.append(x)
+                x = self.pool(x)
 
             # ── Bottleneck ──
             x = self.bottleneck(x)
 
             # ── Decoder ──
-            skip_features = skip_features[::-1]  # Inverte a ordem
+            skip_features = skip_features[::-1]
             for i, (upconv, decoder) in enumerate(zip(self.upconvs, self.decoder_blocks)):
-                x = upconv(x)             # Dobra resolução 2×
+                x = upconv(x)
                 skip = skip_features[i]
 
-                # Ajusta tamanho se necessário (dimensões não divisíveis por 2)
                 if x.shape[2:] != skip.shape[2:]:
                     x = F.interpolate(x, size=skip.shape[2:],
                                       mode="bilinear", align_corners=True)
 
-                # SKIP CONNECTION: concatena features do encoder
+                # Attention Gate filtra features irrelevantes do skip
+                if self.use_attention:
+                    skip = self.attention_gates[i](g=x, x=skip)
+
                 x = torch.cat([skip, x], dim=1)
                 x = decoder(x)
 
-            # Sigmoid mapeia output para [0, 1] = probabilidade de defeito
-            return torch.sigmoid(self.final_conv(x))
+            # Binário: Sigmoid → [0,1] | Multi-classe: logits brutos
+            if self.out_channels == 1:
+                return torch.sigmoid(self.final_conv(x))
+            else:
+                return self.final_conv(x)
 
     class DiceBCELoss(nn.Module):
         """
@@ -166,6 +221,45 @@ if TORCH_AVAILABLE:
             dice_loss = 1.0 - dice
 
             return self.bce_weight * bce_loss + self.dice_weight * dice_loss
+
+    class FocalTverskyLoss(nn.Module):
+        """
+        Focal Tversky Loss — otimizada para segmentação desbalanceada.
+
+        O Tversky Index generaliza o Dice com pesos assimétricos:
+          TI = (TP + ε) / (TP + α·FP + β·FN + ε)
+
+        Com α < β, falsos negativos (defeitos ignorados) são penalizados
+        mais que falsos positivos (alarmes falsos).
+
+        O expoente focal (1 - TI)^γ amplifica o gradiente nos exemplos
+        difíceis, forçando a rede a focar nos defeitos que mais erra.
+
+        Parâmetros padrão:
+          α = 0.3  (peso dos FP)
+          β = 0.7  (peso dos FN — 2.3× mais que FP)
+          γ = 0.75 (expoente focal)
+        """
+        def __init__(self, alpha: float = 0.3, beta: float = 0.7,
+                     gamma: float = 0.75, smooth: float = 1.0):
+            super().__init__()
+            self.alpha = alpha
+            self.beta = beta
+            self.gamma = gamma
+            self.smooth = smooth
+
+        def forward(self, predictions, targets):
+            pred = predictions.view(-1)
+            tgt = targets.view(-1)
+
+            tp = (pred * tgt).sum()
+            fp = (pred * (1 - tgt)).sum()
+            fn = ((1 - pred) * tgt).sum()
+
+            tversky = (tp + self.smooth) / (
+                tp + self.alpha * fp + self.beta * fn + self.smooth
+            )
+            return (1 - tversky) ** self.gamma
 
 
 # ─── Dataset de Patches para Treino ──────────────────────────────────────────

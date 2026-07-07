@@ -1,3 +1,36 @@
-/__pycache__
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Ambiente virtual / dependências locais
 .packages/
-aitex-fabric-defect-detection/
+.venv/
+venv/
+env/
+
+# Dataset (muito grande para git)
+aitex-fabric-image-database/
+
+# Modelos treinados (binários grandes)
+resultados/models/*.pth
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Resultados gerados (regeneráveis)
+resultados/frames/
+resultados/restaurados/
+resultados/defeitos/
+resultados/benchmarks/

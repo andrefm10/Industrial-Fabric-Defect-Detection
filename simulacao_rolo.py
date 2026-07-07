@@ -29,6 +29,7 @@ import torch
 
 from config import DATASET_DIR, MODELS_DIR, RESULTS_DIR
 from fase2_deteccao.unet_segmentation import UNet
+from fase2_deteccao.defect_classifier import DefectClassifier, DEFECT_CLASSES
 from utils.dataset_loader import AitexDataset
 
 # ── Configuração ──────────────────────────────────────────────────────────────
@@ -262,35 +263,51 @@ def draw_hud(frame, scroll_x, roll_width, speed, paused, show_heatmap,
     return frame
 
 
-def draw_defect_overlay(frame, binary_mask, confidence_map, show_heatmap):
+def draw_defect_overlay(frame, binary_mask, confidence_map, show_heatmap,
+                        classifier=None, visible_gray=None, device=None):
     """Desenha o overlay de defeitos detectados sobre o frame."""
     h, w = frame.shape[:2]
 
     if show_heatmap and confidence_map is not None:
-        # Heatmap suave
         heat_norm = (confidence_map * 255).astype(np.uint8)
         heat_colored = cv2.applyColorMap(heat_norm, cv2.COLORMAP_JET)
-        # Só aplicar onde há alguma confiança > 0.1
         mask_region = (confidence_map > 0.1).astype(np.float32)
         for c in range(3):
             frame[:, :, c] = (frame[:, :, c] * (1 - mask_region * 0.4) +
                               heat_colored[:, :, c] * mask_region * 0.4).astype(np.uint8)
 
-    # Overlay vermelho semi-transparente nos defeitos detectados
     if binary_mask is not None and binary_mask.sum() > 0:
         defect_pixels = binary_mask > 0
         overlay = frame.copy()
-        overlay[defect_pixels] = [0, 0, 255]  # Vermelho puro
+        overlay[defect_pixels] = [0, 0, 255]
         cv2.addWeighted(overlay, 0.4, frame, 0.6, 0, frame)
 
-        # Bounding boxes nos contornos
         contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area > 20:  # Ignorar contornos minúsculos
+            if area > 20:
                 x, y, bw, bh = cv2.boundingRect(cnt)
                 cv2.rectangle(frame, (x, y), (x + bw, y + bh), (0, 0, 255), 2)
-                cv2.putText(frame, "DEFEITO", (x, y - 5),
+
+                # Classificar tipo de defeito se disponível
+                label = "DEFEITO"
+                if classifier is not None and visible_gray is not None:
+                    try:
+                        pad = 8
+                        x1 = max(0, x - pad)
+                        y1 = max(0, y - pad)
+                        x2 = min(visible_gray.shape[1], x + bw + pad)
+                        y2 = min(visible_gray.shape[0], y + bh + pad)
+                        patch = visible_gray[y1:y2, x1:x2]
+                        if patch.size > 0:
+                            patch_resized = cv2.resize(patch, (64, 64))
+                            tensor = torch.FloatTensor(patch_resized).unsqueeze(0).unsqueeze(0).to(device)
+                            pred = classifier(tensor).argmax(dim=1).item()
+                            label = DEFECT_CLASSES[pred]
+                    except Exception:
+                        label = "DEFEITO"
+
+                cv2.putText(frame, label, (x, y - 5),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
 
     return frame
@@ -327,6 +344,17 @@ def main():
     model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
     model.eval()
     print(f"  Modelo carregado: {model_path}")
+
+    # Carregar classificador de defeitos (opicional)
+    classifier = None
+    clf_path = MODELS_DIR / "defect_classifier.pth"
+    if clf_path.exists():
+        classifier = DefectClassifier(num_classes=len(DEFECT_CLASSES)).to(device)
+        classifier.load_state_dict(torch.load(clf_path, map_location=device, weights_only=True))
+        classifier.eval()
+        print(f"  Classificador carregado: {clf_path}")
+    else:
+        print(f"  Classificador nao encontrado - mostrando 'DEFEITO' generico")
 
     # Carregar dataset e montar rolo
     print("\n  Montando rolo de tecido...")
@@ -412,8 +440,10 @@ def main():
             bin_display = cv2.resize(bin_display, (WINDOW_WIDTH, WINDOW_HEIGHT), interpolation=cv2.INTER_NEAREST)
             conf_display = cv2.resize(conf_display, (WINDOW_WIDTH, WINDOW_HEIGHT), interpolation=cv2.INTER_LINEAR)
 
-        # Desenhar overlay de defeitos
-        display = draw_defect_overlay(display, bin_display, conf_display, show_heatmap)
+        # Desenhar overlay de defeitos (com classificação se disponível)
+        display = draw_defect_overlay(display, bin_display, conf_display, show_heatmap,
+                                      classifier=classifier, visible_gray=visible_gray,
+                                      device=device)
 
         # Expandir o frame para caber o HUD
         frame = np.zeros((WINDOW_HEIGHT + 80, WINDOW_WIDTH, 3), dtype=np.uint8)
